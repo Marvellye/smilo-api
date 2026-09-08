@@ -1,6 +1,7 @@
 {
     "require": {
-        "flightphp/core": "^3.19"
+        "flightphp/core": "^3.19",
+        "firebase/php-jwt": "^7.1"
     },
     "autoload": {
         "psr-4": {

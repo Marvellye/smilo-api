@@ -100,6 +100,70 @@ class Database
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
 
+        // Users table (buyers + sellers share this)
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS users (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                name        VARCHAR(255) NOT NULL,
+                email       VARCHAR(255) NOT NULL UNIQUE,
+                password    VARCHAR(255) NOT NULL,
+                phone       VARCHAR(50),
+                role        ENUM('buyer','seller','admin') NOT NULL DEFAULT 'buyer',
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_users_email (email)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+
+        // Links users to sellers (a user who is a seller gets a seller profile)
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS seller_profiles (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                user_id     INT NOT NULL UNIQUE,
+                shop_name   VARCHAR(255) NOT NULL,
+                location    VARCHAR(255) NOT NULL,
+                verified    TINYINT(1) NOT NULL DEFAULT 0,
+                phone       VARCHAR(50),
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+
+        // Messages (contact seller)
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS messages (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                sender_id   INT,
+                product_id  INT NOT NULL,
+                seller_id   INT NOT NULL,
+                name        VARCHAR(255),
+                email       VARCHAR(255),
+                phone       VARCHAR(50),
+                body        TEXT NOT NULL,
+                is_read     TINYINT(1) NOT NULL DEFAULT 0,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_messages_seller (seller_id),
+                INDEX idx_messages_product (product_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+
+        // Reviews
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS reviews (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                product_id  INT NOT NULL,
+                user_id     INT,
+                author      VARCHAR(255) NOT NULL,
+                rating      TINYINT NOT NULL,
+                title       VARCHAR(255),
+                body        TEXT,
+                helpful     INT DEFAULT 0,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (product_id) REFERENCES products(id),
+                INDEX idx_reviews_product (product_id),
+                INDEX idx_reviews_rating (rating)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+
         $db->exec("SET FOREIGN_KEY_CHECKS = 1");
     }
 
@@ -141,6 +205,69 @@ class Database
         $db->exec('CREATE INDEX IF NOT EXISTS idx_products_status ON products(status)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_products_seller ON products(seller_id)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_products_price ON products(price)');
+
+        // Users
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS users (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL,
+                email       TEXT NOT NULL UNIQUE,
+                password    TEXT NOT NULL,
+                phone       TEXT,
+                role        TEXT NOT NULL DEFAULT 'buyer' CHECK(role IN ('buyer','seller','admin')),
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        ");
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+
+        // Seller profiles
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS seller_profiles (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL UNIQUE,
+                shop_name   TEXT NOT NULL,
+                location    TEXT NOT NULL,
+                verified    INTEGER NOT NULL DEFAULT 0,
+                phone       TEXT,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ");
+
+        // Messages
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS messages (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender_id   INTEGER,
+                product_id  INTEGER NOT NULL,
+                seller_id   INTEGER NOT NULL,
+                name        TEXT,
+                email       TEXT,
+                phone       TEXT,
+                body        TEXT NOT NULL,
+                is_read     INTEGER NOT NULL DEFAULT 0,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        ");
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_messages_seller ON messages(seller_id)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_messages_product ON messages(product_id)');
+
+        // Reviews
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS reviews (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id  INTEGER NOT NULL,
+                user_id     INTEGER,
+                author      TEXT NOT NULL,
+                rating      INTEGER NOT NULL,
+                title       TEXT,
+                body        TEXT,
+                helpful     INTEGER DEFAULT 0,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (product_id) REFERENCES products(id)
+            )
+        ");
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews(product_id)');
     }
 
     public static function seed(PDO $db): void
