@@ -20,7 +20,7 @@ class ProductController
     /** GET /api/products — list all products */
     public function index(): void
     {
-        $sql = 'SELECT p.*, s.name AS seller_name, s.location AS seller_location, s.verified AS seller_verified
+        $sql = 'SELECT p.*, s.name AS seller_name, s.location AS seller_location, s.verified AS seller_verified, s.phone AS seller_phone
                 FROM products p
                 LEFT JOIN sellers s ON s.id = p.seller_id
                 WHERE p.status = ?';
@@ -93,7 +93,7 @@ class ProductController
     public function show(string $id): void
     {
         $stmt = $this->db->prepare(
-            'SELECT p.*, s.name AS seller_name, s.location AS seller_location, s.verified AS seller_verified
+            'SELECT p.*, s.name AS seller_name, s.location AS seller_location, s.verified AS seller_verified, s.phone AS seller_phone
              FROM products p
              LEFT JOIN sellers s ON s.id = p.seller_id
              WHERE p.id = ?'
