@@ -1,0 +1,6 @@
+/vendor/
+.env
+storage/database/*.db
+storage/database/*.db-journal
+storage/database/*.db-wal
+storage/database/*.db-shm

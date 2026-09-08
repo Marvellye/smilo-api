@@ -1,0 +1,10 @@
+{
+    "require": {
+        "flightphp/core": "^3.19"
+    },
+    "autoload": {
+        "psr-4": {
+            "Smilo\\": "app/"
+        }
+    }
+}
