@@ -128,6 +128,9 @@ Flight::route('GET /api/messages/inbox', function () use ($db) {
 Flight::route('GET /api/messages/sent', function () use ($db) {
     (new MessageController($db))->sent();
 });
+Flight::route('GET /api/messages/thread', function () use ($db) {
+    (new MessageController($db))->thread();
+});
 Flight::route('GET /api/messages', function () use ($db) {
     (new MessageController($db))->index();
 });
