@@ -27,6 +27,7 @@ use Smilo\Controller\SellerController;
 use Smilo\Controller\AuthController;
 use Smilo\Controller\MessageController;
 use Smilo\Controller\ReviewController;
+use Smilo\Controller\UploadController;
 
 $config = require __DIR__ . '/../app/config/config.php';
 $db = Database::connect($config['db']);
@@ -132,6 +133,11 @@ Flight::route('GET /api/messages', function () use ($db) {
 });
 Flight::route('PUT /api/messages/@id/read', function (string $id) use ($db) {
     (new MessageController($db))->markRead($id);
+});
+
+// --- Uploads ---
+Flight::route('POST /api/uploads', function () {
+    (new UploadController())->store();
 });
 
 // --- Handlers ---

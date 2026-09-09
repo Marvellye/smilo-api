@@ -46,7 +46,7 @@ class MessageController
         }
 
         $stmt = $this->db->prepare(
-            'INSERT INTO messages (sender_id, product_id, seller_id, name, email, phone, body) VALUES (?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO messages (sender_id, product_id, seller_id, name, email, phone, body, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
         );
         $stmt->execute([
             $senderId,
@@ -56,6 +56,7 @@ class MessageController
             $email,
             $phone,
             $body,
+            isset($data['image']) && trim((string) $data['image']) !== '' ? trim((string) $data['image']) : null,
         ]);
 
         $msgId = (int) $this->db->lastInsertId();

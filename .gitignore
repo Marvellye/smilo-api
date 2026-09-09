@@ -4,3 +4,5 @@ storage/database/*.db
 storage/database/*.db-journal
 storage/database/*.db-wal
 storage/database/*.db-shm
+public/uploads/*
+!public/uploads/.gitkeep

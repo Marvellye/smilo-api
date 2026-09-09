@@ -149,12 +149,22 @@ class Database
                 email       VARCHAR(255),
                 phone       VARCHAR(50),
                 body        TEXT NOT NULL,
+                image       VARCHAR(500),
                 is_read     TINYINT(1) NOT NULL DEFAULT 0,
                 created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_messages_seller (seller_id),
                 INDEX idx_messages_product (product_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
+
+        // Photo attachments on messages (added after initial release)
+        $hasMsgImage = (int) $db->query(
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'messages' AND COLUMN_NAME = 'image'"
+        )->fetchColumn();
+        if (!$hasMsgImage) {
+            $db->exec('ALTER TABLE messages ADD COLUMN image VARCHAR(500) NULL AFTER body');
+        }
 
         // Reviews
         $db->exec("
@@ -255,6 +265,7 @@ class Database
                 email       TEXT,
                 phone       TEXT,
                 body        TEXT NOT NULL,
+                image       TEXT,
                 is_read     INTEGER NOT NULL DEFAULT 0,
                 created_at  TEXT NOT NULL DEFAULT (datetime('now'))
             )
@@ -262,6 +273,16 @@ class Database
         $db->exec('CREATE INDEX IF NOT EXISTS idx_messages_seller ON messages(seller_id)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_messages_product ON messages(product_id)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id)');
+
+        // Photo attachments on messages (added after initial release)
+        $cols = $db->query('PRAGMA table_info(messages)')->fetchAll(\PDO::FETCH_ASSOC);
+        $hasMsgImage = false;
+        foreach ($cols as $c) {
+            if (($c['name'] ?? '') === 'image') { $hasMsgImage = true; break; }
+        }
+        if (!$hasMsgImage) {
+            $db->exec('ALTER TABLE messages ADD COLUMN image TEXT NULL');
+        }
 
         // Link legacy sellers rows to user accounts (nullable so seed data keeps working)
         $cols = $db->query('PRAGMA table_info(sellers)')->fetchAll(\PDO::FETCH_ASSOC);
@@ -294,6 +315,8 @@ class Database
 
     public static function seed(PDO $db): void
     {
+        self::backfillSellerPhones($db);
+
         $sellerCount = (int) $db->query('SELECT COUNT(*) FROM sellers')->fetchColumn();
         $productCount = (int) $db->query('SELECT COUNT(*) FROM products')->fetchColumn();
         if ($sellerCount > 0 && $productCount > 0) {
@@ -315,19 +338,19 @@ class Database
 
         // Sellers
         $sellers = [
-            ['TechHub Lagos',     'Ikeja, Lagos',        1],
-            ['GadgetPoint',       'Wuse 2, Abuja',       1],
-            ['Chioma Electronics','Port Harcourt, Rivers',0],
-            ['Musa Phones & More','Kano, Kano',           0],
-            ['PrimeDeals Store',  'Lekki, Lagos',         1],
-            ['Emeka Home Appl.',  'Aba, Abia',            0],
-            ['SwiftMart NG',      'Yaba, Lagos',          1],
-            ['Bola Fashion House','Ibadan, Oyo',          1],
+            ['TechHub Lagos',     'Ikeja, Lagos',        1, '08033010001'],
+            ['GadgetPoint',       'Wuse 2, Abuja',       1, '08033010002'],
+            ['Chioma Electronics','Port Harcourt, Rivers',0, '08033010003'],
+            ['Musa Phones & More','Kano, Kano',           0, '08033010004'],
+            ['PrimeDeals Store',  'Lekki, Lagos',         1, '08033010005'],
+            ['Emeka Home Appl.',  'Aba, Abia',            0, '08033010006'],
+            ['SwiftMart NG',      'Yaba, Lagos',          1, '08033010007'],
+            ['Bola Fashion House','Ibadan, Oyo',          1, '08033010008'],
         ];
 
-        $stmt = $db->prepare('INSERT INTO sellers (name, location, verified) VALUES (?, ?, ?)');
-        foreach ($sellers as [$name, $loc, $ver]) {
-            $stmt->execute([$name, $loc, $ver]);
+        $stmt = $db->prepare('INSERT INTO sellers (name, location, verified, phone) VALUES (?, ?, ?, ?)');
+        foreach ($sellers as [$name, $loc, $ver, $phone]) {
+            $stmt->execute([$name, $loc, $ver, $phone]);
         }
 
         // Products — seller_id cycles 1-8
@@ -371,6 +394,30 @@ class Database
 
         foreach ($products as $p) {
             $stmt->execute($p);
+        }
+    }
+
+    /** Give existing seed shops a reachable phone so call/WhatsApp always work. */
+    private static function backfillSellerPhones(PDO $db): void
+    {
+        $map = [
+            'TechHub Lagos'      => '08033010001',
+            'GadgetPoint'        => '08033010002',
+            'Chioma Electronics' => '08033010003',
+            'Musa Phones & More' => '08033010004',
+            'PrimeDeals Store'   => '08033010005',
+            'Emeka Home Appl.'   => '08033010006',
+            'SwiftMart NG'       => '08033010007',
+            'Bola Fashion House' => '08033010008',
+        ];
+        $stmt = $db->prepare('UPDATE sellers SET phone = ? WHERE name = ? AND (phone IS NULL OR phone = ?)');
+        foreach ($map as $name => $phone) {
+            try {
+                $stmt->execute([$phone, $name, '']);
+            } catch (\PDOException $e) {
+                // Table may not exist yet on a fresh DB — migrate() creates it below
+                break;
+            }
         }
     }
 }

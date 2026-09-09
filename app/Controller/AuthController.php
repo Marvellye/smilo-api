@@ -186,32 +186,39 @@ class AuthController
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
         $shopName = trim((string) ($data['shop_name'] ?? ''));
         $location = trim((string) ($data['location'] ?? ''));
+        $phone = trim((string) ($data['phone'] ?? ''));
         if ($shopName === '' || $location === '') {
             \Flight::json(['error' => 'Shop name and location are required'], 422);
             return;
         }
-
-        $stmt = $this->db->prepare('SELECT phone FROM users WHERE id = ?');
-        $stmt->execute([$userId]);
-        $userPhone = $stmt->fetchColumn();
+        // Phone is mandatory — buyers reach sellers via call/WhatsApp
+        if ($phone === '') {
+            $stmt = $this->db->prepare('SELECT phone FROM users WHERE id = ?');
+            $stmt->execute([$userId]);
+            $phone = trim((string) ($stmt->fetchColumn() ?: ''));
+            if ($phone === '') {
+                \Flight::json(['error' => 'Phone number is required so buyers can reach you'], 422);
+                return;
+            }
+        }
 
         $stmt = $this->db->prepare('INSERT INTO sellers (name, location, phone, user_id) VALUES (?, ?, ?, ?)');
-        $stmt->execute([$shopName, $location, $data['phone'] ?? ($userPhone ?: null), $userId]);
+        $stmt->execute([$shopName, $location, $phone, $userId]);
         $sellerId = (int) $this->db->lastInsertId();
 
         $sp = $this->db->prepare('INSERT INTO seller_profiles (user_id, shop_name, location, phone) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE shop_name = VALUES(shop_name), location = VALUES(location), phone = VALUES(phone)');
         try {
-            $sp->execute([$userId, $shopName, $location, $data['phone'] ?? ($userPhone ?: null)]);
+            $sp->execute([$userId, $shopName, $location, $phone]);
         } catch (\PDOException $e) {
             // SQLite has no ON DUPLICATE KEY — upsert manually
             $chk = $this->db->prepare('SELECT id FROM seller_profiles WHERE user_id = ?');
             $chk->execute([$userId]);
             if ($chk->fetch()) {
                 $upd = $this->db->prepare('UPDATE seller_profiles SET shop_name = ?, location = ?, phone = ? WHERE user_id = ?');
-                $upd->execute([$shopName, $location, $data['phone'] ?? ($userPhone ?: null), $userId]);
+                $upd->execute([$shopName, $location, $phone, $userId]);
             } else {
                 $ins = $this->db->prepare('INSERT INTO seller_profiles (user_id, shop_name, location, phone) VALUES (?, ?, ?, ?)');
-                $ins->execute([$userId, $shopName, $location, $data['phone'] ?? ($userPhone ?: null)]);
+                $ins->execute([$userId, $shopName, $location, $phone]);
             }
         }
 
