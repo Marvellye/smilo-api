@@ -33,9 +33,12 @@ $db = Database::connect($config['db']);
 Database::migrate($db);
 Database::seed($db);
 
-// --- CORS (all responses) ---
-$origin = $config['cors']['origin'];
+// --- CORS (all responses; comma-separated origins allowed) ---
+$origins = array_map('trim', explode(',', $config['cors']['origin']));
+$requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
+$origin = in_array($requestOrigin, $origins, true) ? $requestOrigin : $origins[0];
 header("Access-Control-Allow-Origin: $origin");
+header('Vary: Origin');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 header('Access-Control-Allow-Credentials: true');
@@ -64,13 +67,32 @@ Flight::route('POST /api/auth/login', function () use ($db) {
 Flight::route('GET /api/auth/me', function () use ($db) {
     (new AuthController($db))->me();
 });
+Flight::route('PUT /api/auth/profile', function () use ($db) {
+    (new AuthController($db))->updateProfile();
+});
+Flight::route('POST /api/auth/become-seller', function () use ($db) {
+    (new AuthController($db))->becomeSeller();
+});
 
 // --- Products ---
 Flight::route('GET /api/products', function () use ($db) {
     (new ProductController(Flight::app(), $db))->index();
 });
+// NOTE: /mine must be registered before /@id
+Flight::route('GET /api/products/mine', function () use ($db) {
+    (new ProductController(Flight::app(), $db))->mine();
+});
 Flight::route('GET /api/products/@id', function (string $id) use ($db) {
     (new ProductController(Flight::app(), $db))->show($id);
+});
+Flight::route('POST /api/products', function () use ($db) {
+    (new ProductController(Flight::app(), $db))->store();
+});
+Flight::route('PUT /api/products/@id', function (string $id) use ($db) {
+    (new ProductController(Flight::app(), $db))->update($id);
+});
+Flight::route('DELETE /api/products/@id', function (string $id) use ($db) {
+    (new ProductController(Flight::app(), $db))->destroy($id);
 });
 Flight::route('GET /api/categories', function () use ($db) {
     (new ProductController(Flight::app(), $db))->categories();
@@ -98,6 +120,12 @@ Flight::route('GET /api/sellers/@id', function (string $id) use ($db) {
 // --- Messages (contact seller) ---
 Flight::route('POST /api/messages', function () use ($db) {
     (new MessageController($db))->send();
+});
+Flight::route('GET /api/messages/inbox', function () use ($db) {
+    (new MessageController($db))->inbox();
+});
+Flight::route('GET /api/messages/sent', function () use ($db) {
+    (new MessageController($db))->sent();
 });
 Flight::route('GET /api/messages', function () use ($db) {
     (new MessageController($db))->index();

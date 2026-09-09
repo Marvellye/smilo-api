@@ -128,6 +128,16 @@ class Database
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
 
+        // Link legacy sellers rows to user accounts (nullable so seed data keeps working)
+        $hasUserId = (int) $db->query(
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sellers' AND COLUMN_NAME = 'user_id'"
+        )->fetchColumn();
+        if (!$hasUserId) {
+            $db->exec('ALTER TABLE sellers ADD COLUMN user_id INT NULL AFTER phone');
+            $db->exec('ALTER TABLE sellers ADD INDEX idx_sellers_user (user_id)');
+        }
+
         // Messages (contact seller)
         $db->exec("
             CREATE TABLE IF NOT EXISTS messages (
@@ -251,6 +261,18 @@ class Database
         ");
         $db->exec('CREATE INDEX IF NOT EXISTS idx_messages_seller ON messages(seller_id)');
         $db->exec('CREATE INDEX IF NOT EXISTS idx_messages_product ON messages(product_id)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id)');
+
+        // Link legacy sellers rows to user accounts (nullable so seed data keeps working)
+        $cols = $db->query('PRAGMA table_info(sellers)')->fetchAll(\PDO::FETCH_ASSOC);
+        $hasUserId = false;
+        foreach ($cols as $c) {
+            if (($c['name'] ?? '') === 'user_id') { $hasUserId = true; break; }
+        }
+        if (!$hasUserId) {
+            $db->exec('ALTER TABLE sellers ADD COLUMN user_id INTEGER NULL');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_sellers_user ON sellers(user_id)');
+        }
 
         // Reviews
         $db->exec("
