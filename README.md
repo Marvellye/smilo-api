@@ -37,14 +37,33 @@ DB_SQLITE_PATH=storage/database/smilo.db
 
 ## Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/health` | Health check |
-| GET | `/api/products` | List products (filters: `category`, `price_min`, `price_max`, `q`, `sort`, `page`, `limit`) |
-| GET | `/api/products/:id` | Single product with seller info |
-| GET | `/api/categories` | Distinct product categories |
-| GET | `/api/sellers` | List all sellers with product counts |
-| GET | `/api/sellers/:id` | Single seller + their products |
+🔒 = requires `Authorization: Bearer <JWT>`.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/health` | No | Health check |
+| POST | `/api/auth/register` | No | Register (buyer/seller) — returns JWT |
+| POST | `/api/auth/login` | No | Login — returns JWT |
+| GET | `/api/auth/me` | 🔒 | Current user + shop info |
+| PUT | `/api/auth/profile` | 🔒 | Update name/phone |
+| POST | `/api/auth/become-seller` | 🔒 | Open a shop (shop_name, location, phone) |
+| GET | `/api/products` | No | List (filters: `category`, `price_min/max`, `q`, `sort`, `page`, `limit`) |
+| GET | `/api/products/mine` | 🔒 | Authenticated seller's own listings |
+| GET | `/api/products/:id` | No | Single product + seller info |
+| POST | `/api/products` | 🔒 seller | Post an ad |
+| PUT | `/api/products/:id` | 🔒 owner | Edit own ad (incl. `status`: active/sold/removed) |
+| DELETE | `/api/products/:id` | 🔒 owner | Remove own ad |
+| GET | `/api/categories` | No | Distinct categories |
+| GET | `/api/sellers` | No | All sellers + product counts |
+| GET | `/api/sellers/:id` | No | Seller + their products |
+| POST | `/api/messages` | No | Contact seller about a product |
+| GET | `/api/messages/inbox` | 🔒 seller | Buyer messages received |
+| GET | `/api/messages/sent` | 🔒 | Messages the user sent |
+| GET | `/api/messages?product_id=X` | No | Messages for one product |
+| PUT | `/api/messages/:id/read` | No | Mark message read |
+| GET | `/api/products/:id/reviews` | No | Reviews + rating breakdown |
+| POST | `/api/products/:id/reviews` | No | Submit review (updates product rating) |
+| POST | `/api/reviews/:id/helpful` | No | Mark review helpful |
 
 ## Database
 
