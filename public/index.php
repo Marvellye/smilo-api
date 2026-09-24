@@ -86,9 +86,12 @@ Flight::route('POST /api/auth/reset-password', function () use ($db) {
 Flight::route('GET /api/products', function () use ($db) {
     (new ProductController(Flight::app(), $db))->index();
 });
-// NOTE: /mine must be registered before /@id
+// NOTE: /mine and /conditions must be registered before /@id
 Flight::route('GET /api/products/mine', function () use ($db) {
     (new ProductController(Flight::app(), $db))->mine();
+});
+Flight::route('GET /api/products/conditions', function () use ($db) {
+    (new ProductController(Flight::app(), $db))->conditions();
 });
 Flight::route('GET /api/products/@id', function (string $id) use ($db) {
     (new ProductController(Flight::app(), $db))->show($id);

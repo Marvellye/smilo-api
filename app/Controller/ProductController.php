@@ -28,6 +28,71 @@ class ProductController
     }
 
     /**
+     * Normalise an incoming image payload to a clean ordered list of URLs.
+     * Accepts `images: []` (preferred) or the legacy single `image` string.
+     *
+     * @return array<int,string>
+     */
+    private function imageUrls(array $data): array
+    {
+        $urls = [];
+        if (is_array($data['images'] ?? null)) {
+            foreach ($data['images'] as $u) {
+                if (!is_string($u)) continue;
+                $u = trim($u);
+                if ($u !== '') $urls[] = $u;
+            }
+        }
+        if ($urls === []) {
+            $single = trim((string) ($data['image'] ?? ''));
+            if ($single !== '') $urls[] = $single;
+        }
+        return array_values(array_unique($urls));
+    }
+
+    /** Replace a listing's gallery and keep products.image pointing at the first photo. */
+    private function replaceImages(int $productId, array $urls): void
+    {
+        $this->db->prepare('DELETE FROM product_images WHERE product_id = ?')->execute([$productId]);
+
+        if ($urls !== []) {
+            $ins = $this->db->prepare('INSERT INTO product_images (product_id, url, position) VALUES (?, ?, ?)');
+            foreach ($urls as $i => $url) {
+                $ins->execute([$productId, $url, $i]);
+            }
+        }
+
+        // products.image remains the listing thumbnail used by cards and search
+        $this->db->prepare('UPDATE products SET image = ? WHERE id = ?')
+            ->execute([$urls[0] ?? null, $productId]);
+    }
+
+    /** @return array<int,string> */
+    private function imagesFor(int $productId): array
+    {
+        $stmt = $this->db->prepare('SELECT url FROM product_images WHERE product_id = ? ORDER BY position, id');
+        $stmt->execute([$productId]);
+        return $stmt->fetchAll(\PDO::FETCH_COLUMN) ?: [];
+    }
+
+    /**
+     * Attach the full `images` gallery to a product row.
+     * Listings created before the gallery existed fall back to the single image column.
+     */
+    private function withImages(array $product): array
+    {
+        $images = $this->imagesFor((int) $product['id']);
+        if ($images === [] && !empty($product['image'])) {
+            $images = [(string) $product['image']];
+        }
+        $product['images'] = $images;
+        if ($images !== []) {
+            $product['image'] = $images[0];
+        }
+        return $product;
+    }
+
+    /**
      * Shared WHERE clause for list queries.
      *
      * The data query and the COUNT query MUST use the same filters — they used
@@ -62,7 +127,29 @@ class ProductController
             $params[] = $term;
         }
 
+        if (isset($_GET['condition']) && trim((string) $_GET['condition']) !== '') {
+            $where[]  = 'p.`condition` = ?';
+            $params[] = trim((string) $_GET['condition']);
+        }
+
+        if (isset($_GET['min_rating']) && $_GET['min_rating'] !== '') {
+            $where[]  = 'p.rating >= ?';
+            $params[] = (float) $_GET['min_rating'];
+        }
+
+        // Only promoted / only non-promoted (used by the deals rails)
+        if (isset($_GET['promoted']) && $_GET['promoted'] !== '') {
+            $where[]  = 'p.promoted = ?';
+            $params[] = (int) (bool) $_GET['promoted'];
+        }
+
         return ['WHERE ' . implode(' AND ', $where), $params];
+    }
+
+    /** GET /api/products/conditions — the condition values sellers can pick */
+    public function conditions(): void
+    {
+        \Flight::json(['data' => ['Brand New', 'Used - Like New', 'Used - Good', 'Used - Fair']]);
     }
 
     /** GET /api/products — list all products */
@@ -125,7 +212,7 @@ class ProductController
             return;
         }
 
-        \Flight::json(['data' => $product]);
+        \Flight::json(['data' => $this->withImages($product)]);
     }
 
     /** GET /api/categories — distinct categories */
@@ -159,7 +246,7 @@ class ProductController
              WHERE p.seller_id = ? AND p.status != ? ORDER BY p.created_at DESC'
         );
         $stmt->execute([$sellerId, 'removed']);
-        $products = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        $products = array_map(fn (array $p): array => $this->withImages($p), $stmt->fetchAll(\PDO::FETCH_ASSOC));
 
         \Flight::json(['data' => $products, 'total' => count($products)]);
     }
@@ -191,20 +278,26 @@ class ProductController
             'INSERT INTO products (seller_id, name, description, price, image, category, `condition`)
              VALUES (?, ?, ?, ?, ?, ?, ?)'
         );
+        $urls = $this->imageUrls($data);
         $stmt->execute([
             $sellerId,
             $name,
             trim((string) ($data['description'] ?? '')) ?: null,
             (float) $price,
-            trim((string) ($data['image'] ?? '')) ?: null,
+            $urls[0] ?? null,
             $category,
             trim((string) ($data['condition'] ?? 'Brand New')) ?: 'Brand New',
         ]);
 
         $id = (int) $this->db->lastInsertId();
+        if ($urls !== []) {
+            $this->replaceImages($id, $urls);
+            // replaceImages already set the thumbnail; skip the redundant UPDATE
+        }
+
         $stmt = $this->db->prepare('SELECT * FROM products WHERE id = ?');
         $stmt->execute([$id]);
-        \Flight::json(['data' => $stmt->fetch(\PDO::FETCH_ASSOC)], 201);
+        \Flight::json(['data' => $this->withImages($stmt->fetch(\PDO::FETCH_ASSOC))], 201);
     }
 
     /** PUT /api/products/@id — update own listing */
@@ -230,11 +323,16 @@ class ProductController
         }
 
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        // A gallery replacement on its own is a valid update
+        $hasImages = is_array($data['images'] ?? null);
+
         $allowed = ['name', 'description', 'price', 'image', 'category', 'condition', 'status'];
         $fields = [];
         $params = [];
         foreach ($allowed as $col) {
             if (!array_key_exists($col, $data)) continue;
+            // `image` is derived from the gallery when images are supplied
+            if ($col === 'image' && $hasImages) continue;
             if ($col === 'price') {
                 if (!is_numeric($data['price']) || (float) $data['price'] <= 0) {
                     \Flight::json(['error' => 'Price must be positive'], 422);
@@ -254,17 +352,23 @@ class ProductController
                 $params[] = $data[$col] ?: null;
             }
         }
-        if (!$fields) {
+        if (!$fields && !$hasImages) {
             \Flight::json(['error' => 'Nothing to update'], 422);
             return;
         }
 
-        $params[] = $id;
-        $this->db->prepare('UPDATE products SET ' . implode(', ', $fields) . ' WHERE id = ?')->execute($params);
+        if ($fields) {
+            $params[] = $id;
+            $this->db->prepare('UPDATE products SET ' . implode(', ', $fields) . ' WHERE id = ?')->execute($params);
+        }
+
+        if ($hasImages) {
+            $this->replaceImages((int) $id, $this->imageUrls($data));
+        }
 
         $stmt = $this->db->prepare('SELECT * FROM products WHERE id = ?');
         $stmt->execute([$id]);
-        \Flight::json(['data' => $stmt->fetch(\PDO::FETCH_ASSOC)]);
+        \Flight::json(['data' => $this->withImages($stmt->fetch(\PDO::FETCH_ASSOC))]);
     }
 
     /** DELETE /api/products/@id — remove own listing (soft delete) */

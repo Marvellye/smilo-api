@@ -184,6 +184,19 @@ class Database
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
 
+        // Gallery images for an ad (an ad can have many photos)
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS product_images (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                product_id  INT NOT NULL,
+                url         VARCHAR(500) NOT NULL,
+                position    INT NOT NULL DEFAULT 0,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                INDEX idx_product_images_product (product_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+
         // Saved ads (wishlist)
         $db->exec("
             CREATE TABLE IF NOT EXISTS favorites (
@@ -339,6 +352,19 @@ class Database
             )
         ");
         $db->exec('CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews(product_id)');
+
+        // Gallery images for an ad (an ad can have many photos)
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS product_images (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id  INTEGER NOT NULL,
+                url         TEXT NOT NULL,
+                position    INTEGER NOT NULL DEFAULT 0,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+            )
+        ");
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_product_images_product ON product_images(product_id)');
 
         // Saved ads (wishlist)
         $db->exec("
