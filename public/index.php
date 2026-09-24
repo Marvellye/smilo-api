@@ -28,6 +28,7 @@ use Smilo\Controller\AuthController;
 use Smilo\Controller\MessageController;
 use Smilo\Controller\ReviewController;
 use Smilo\Controller\UploadController;
+use Smilo\Controller\FavoriteController;
 
 $config = require __DIR__ . '/../app/config/config.php';
 $db = Database::connect($config['db']);
@@ -73,6 +74,12 @@ Flight::route('PUT /api/auth/profile', function () use ($db) {
 });
 Flight::route('POST /api/auth/become-seller', function () use ($db) {
     (new AuthController($db))->becomeSeller();
+});
+Flight::route('POST /api/auth/forgot-password', function () use ($db) {
+    (new AuthController($db))->forgotPassword();
+});
+Flight::route('POST /api/auth/reset-password', function () use ($db) {
+    (new AuthController($db))->resetPassword();
 });
 
 // --- Products ---
@@ -141,6 +148,21 @@ Flight::route('PUT /api/messages/@id/read', function (string $id) use ($db) {
 // --- Uploads ---
 Flight::route('POST /api/uploads', function () {
     (new UploadController())->store();
+});
+
+// --- Saved ads (wishlist) ---
+// NOTE: /ids must be registered before any /@id pattern on the same method
+Flight::route('GET /api/favorites', function () use ($db) {
+    (new FavoriteController($db))->index();
+});
+Flight::route('GET /api/favorites/ids', function () use ($db) {
+    (new FavoriteController($db))->ids();
+});
+Flight::route('POST /api/favorites', function () use ($db) {
+    (new FavoriteController($db))->toggle();
+});
+Flight::route('DELETE /api/favorites/@id', function (string $id) use ($db) {
+    (new FavoriteController($db))->destroy($id);
 });
 
 // --- Handlers ---

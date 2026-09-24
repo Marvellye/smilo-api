@@ -184,6 +184,34 @@ class Database
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
 
+        // Saved ads (wishlist)
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS favorites (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                user_id     INT NOT NULL,
+                product_id  INT NOT NULL,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_favorites_user_product (user_id, product_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                INDEX idx_favorites_user (user_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+
+        // Password reset tokens (single-use, hashed)
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS password_resets (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                user_id     INT NOT NULL,
+                token_hash  CHAR(64) NOT NULL,
+                expires_at  DATETIME NOT NULL,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_password_resets_token (token_hash),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                INDEX idx_password_resets_user (user_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+
         $db->exec("SET FOREIGN_KEY_CHECKS = 1");
     }
 
@@ -311,6 +339,33 @@ class Database
             )
         ");
         $db->exec('CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews(product_id)');
+
+        // Saved ads (wishlist)
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS favorites (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL,
+                product_id  INTEGER NOT NULL,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE (user_id, product_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+            )
+        ");
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id)');
+
+        // Password reset tokens (single-use, hashed)
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS password_resets (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL,
+                token_hash  TEXT NOT NULL UNIQUE,
+                expires_at  TEXT NOT NULL,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        ");
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id)');
     }
 
     public static function seed(PDO $db): void

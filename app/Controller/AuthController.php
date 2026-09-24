@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Smilo\Controller;
 
 use Smilo\Helper\Auth;
+use Smilo\Helper\Mailer;
 
 class AuthController
 {
@@ -237,5 +238,117 @@ class AuthController
         $seller['id'] = (int) $seller['id'];
         $seller['verified'] = (bool) $seller['verified'];
         return $seller;
+    }
+
+    /**
+     * POST /api/auth/forgot-password {email}
+     *
+     * Always answers with the same generic message so the endpoint cannot be
+     * used to discover which emails have accounts.
+     */
+    public function forgotPassword(): void
+    {
+        $data  = json_decode(file_get_contents('php://input'), true) ?? [];
+        $email = trim((string) ($data['email'] ?? ''));
+
+        $response = ['message' => 'If that email is registered, a reset link is on its way.'];
+
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            \Flight::json($response);
+            return;
+        }
+
+        $stmt = $this->db->prepare('SELECT id, name, email FROM users WHERE email = ?');
+        $stmt->execute([$email]);
+        $user = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+        if (!$user) {
+            \Flight::json($response);
+            return;
+        }
+
+        // Only one live token per account
+        $this->db->prepare('DELETE FROM password_resets WHERE user_id = ?')->execute([(int) $user['id']]);
+
+        // Store only the hash — a leaked DB row cannot be turned into a reset link
+        $token   = bin2hex(random_bytes(32));
+        $ttl     = (int) (getenv('RESET_TOKEN_TTL') ?: 3600);
+        $expires = date('Y-m-d H:i:s', time() + $ttl);
+
+        $this->db->prepare('INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES (?, ?, ?)')
+            ->execute([(int) $user['id'], hash('sha256', $token), $expires]);
+
+        $siteUrl = rtrim((string) (getenv('SITE_URL') ?: 'http://localhost:5173'), '/');
+        $link    = $siteUrl . '/reset-password?token=' . $token;
+        $minutes = (int) ceil($ttl / 60);
+        $name    = htmlspecialchars((string) ($user['name'] ?: 'there'), ENT_QUOTES, 'UTF-8');
+
+        $html = <<<HTML
+        <div style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#1e293b">
+          <h2 style="margin:0 0 4px;color:#1d4ed8">Reset your Smilo password</h2>
+          <p style="color:#64748b;margin:0 0 20px">Hi {$name}, we received a request to reset your password.</p>
+          <p style="margin:0 0 24px">
+            <a href="{$link}"
+               style="display:inline-block;background:#f97316;color:#fff;text-decoration:none;font-weight:700;padding:13px 24px;border-radius:8px">
+              Choose a new password
+            </a>
+          </p>
+          <p style="font-size:13px;color:#64748b;margin:0 0 8px">This link expires in {$minutes} minute(s) and can only be used once.</p>
+          <p style="font-size:13px;color:#64748b;margin:0 0 20px">If you didn't request this, you can safely ignore this email — your password stays unchanged.</p>
+          <p style="font-size:12px;color:#94a3b8;word-break:break-all;margin:0">Button not working? Paste this into your browser:<br>{$link}</p>
+        </div>
+        HTML;
+
+        Mailer::send((string) $user['email'], 'Reset your Smilo password', $html);
+
+        // With no SMTP configured there is no inbox to check locally, so surface
+        // the link in the response — strictly when debug is on.
+        $debug = filter_var(getenv('APP_DEBUG') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+        if ($debug && !Mailer::isConfigured()) {
+            $response['debug_reset_link'] = $link;
+            $response['debug_note'] = 'SMTP is not configured — the email was written to storage/logs/mail.log instead.';
+        }
+
+        \Flight::json($response);
+    }
+
+    /** POST /api/auth/reset-password {token, password} */
+    public function resetPassword(): void
+    {
+        $data     = json_decode(file_get_contents('php://input'), true) ?? [];
+        $token    = trim((string) ($data['token'] ?? ''));
+        $password = (string) ($data['password'] ?? '');
+
+        if ($token === '') {
+            \Flight::json(['error' => 'Reset token is required'], 422);
+            return;
+        }
+        if (strlen($password) < 6) {
+            \Flight::json(['error' => 'Password must be at least 6 characters'], 422);
+            return;
+        }
+
+        $stmt = $this->db->prepare('SELECT id, user_id, expires_at FROM password_resets WHERE token_hash = ? LIMIT 1');
+        $stmt->execute([hash('sha256', $token)]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            \Flight::json(['error' => 'This reset link is invalid or has already been used.'], 400);
+            return;
+        }
+
+        if (strtotime((string) $row['expires_at']) < time()) {
+            $this->db->prepare('DELETE FROM password_resets WHERE id = ?')->execute([(int) $row['id']]);
+            \Flight::json(['error' => 'This reset link has expired. Please request a new one.'], 400);
+            return;
+        }
+
+        $this->db->prepare('UPDATE users SET password = ? WHERE id = ?')
+            ->execute([password_hash($password, PASSWORD_DEFAULT), (int) $row['user_id']]);
+
+        // Single use — drop every token for this account
+        $this->db->prepare('DELETE FROM password_resets WHERE user_id = ?')->execute([(int) $row['user_id']]);
+
+        \Flight::json(['message' => 'Password updated. You can now sign in.']);
     }
 }

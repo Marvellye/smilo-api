@@ -27,38 +27,53 @@ class ProductController
         return $id === false ? null : (int) $id;
     }
 
-    /** GET /api/products — list all products */
-    public function index(): void
+    /**
+     * Shared WHERE clause for list queries.
+     *
+     * The data query and the COUNT query MUST use the same filters — they used
+     * to be written separately (and drifted), which made `total`/`pages` report
+     * the whole catalogue whenever a search term or price range was applied.
+     *
+     * @return array{0:string,1:array<int,mixed>} [whereSql, params]
+     */
+    private function listFilters(): array
     {
-        $sql = 'SELECT p.*, s.name AS seller_name, s.location AS seller_location, s.verified AS seller_verified, s.phone AS seller_phone
-                FROM products p
-                LEFT JOIN sellers s ON s.id = p.seller_id
-                WHERE p.status = ?';
+        $where  = ['p.status = ?'];
         $params = ['active'];
 
-        // Category filter
         if (!empty($_GET['category'])) {
-            $sql .= ' AND p.category = ?';
+            $where[]  = 'p.category = ?';
             $params[] = $_GET['category'];
         }
 
-        // Price range
-        if (isset($_GET['price_min'])) {
-            $sql .= ' AND p.price >= ?';
+        if (isset($_GET['price_min']) && $_GET['price_min'] !== '') {
+            $where[]  = 'p.price >= ?';
             $params[] = (float) $_GET['price_min'];
         }
-        if (isset($_GET['price_max'])) {
-            $sql .= ' AND p.price <= ?';
+        if (isset($_GET['price_max']) && $_GET['price_max'] !== '') {
+            $where[]  = 'p.price <= ?';
             $params[] = (float) $_GET['price_max'];
         }
 
-        // Search
-        if (!empty($_GET['q'])) {
-            $sql .= ' AND (p.name LIKE ? OR p.description LIKE ?)';
-            $term = '%' . $_GET['q'] . '%';
+        if (isset($_GET['q']) && trim((string) $_GET['q']) !== '') {
+            $where[]  = '(p.name LIKE ? OR p.description LIKE ?)';
+            $term     = '%' . trim((string) $_GET['q']) . '%';
             $params[] = $term;
             $params[] = $term;
         }
+
+        return ['WHERE ' . implode(' AND ', $where), $params];
+    }
+
+    /** GET /api/products — list all products */
+    public function index(): void
+    {
+        [$where, $params] = $this->listFilters();
+
+        $sql = 'SELECT p.*, s.name AS seller_name, s.location AS seller_location, s.verified AS seller_verified, s.phone AS seller_phone
+                FROM products p
+                LEFT JOIN sellers s ON s.id = p.seller_id
+                ' . $where;
 
         // Sorting
         $sort = match ($_GET['sort'] ?? 'newest') {
@@ -79,15 +94,9 @@ class ProductController
         $stmt->execute($params);
         $products = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
-        // Total count for pagination
-        $countSql = 'SELECT COUNT(*) FROM products WHERE status = ?';
-        $countParams = ['active'];
-        if (!empty($_GET['category'])) {
-            $countSql .= ' AND category = ?';
-            $countParams[] = $_GET['category'];
-        }
-        $countStmt = $this->db->prepare($countSql);
-        $countStmt->execute($countParams);
+        // Total count for pagination — same filters as above
+        $countStmt = $this->db->prepare('SELECT COUNT(*) FROM products p ' . $where);
+        $countStmt->execute($params);
         $total = (int) $countStmt->fetchColumn();
 
         \Flight::json([

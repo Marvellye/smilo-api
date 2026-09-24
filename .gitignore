@@ -1,5 +1,6 @@
 /vendor/
 .env
+storage/logs/
 storage/database/*.db
 storage/database/*.db-journal
 storage/database/*.db-wal
